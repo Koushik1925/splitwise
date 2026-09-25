@@ -1,0 +1,57 @@
+# Splitwise
+
+A production-grade shared-expense and payment application: shared expense
+tracking, accurate balances, partial settlements, UPI-based payments with
+verified confirmation, cash payments with recipient confirmation, and
+automated overdue reminders.
+
+**Status: foundation phase.** Feature screens and business logic have not
+been built yet — see [`docs/product/core-rules.md`](docs/product/core-rules.md)
+for the rules that will govern them.
+
+## Structure
+
+```
+apps/
+  web/        Next.js frontend
+  api/        NestJS backend
+
+packages/
+  shared/     Shared types, enums, constants
+  ui/         Shared shadcn/ui-based component library
+  config/     Shared TypeScript/ESLint base configuration
+
+docs/
+  architecture/  System design and payment-flow docs
+  database/      Entity/schema design
+  api/           API conventions and planned routes
+  product/       Business rules
+```
+
+## Getting started
+
+```bash
+npm install
+cp .env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env.local
+docker compose up -d          # local MongoDB + Redis
+npm run dev:api                # http://localhost:4000
+npm run dev:web                # http://localhost:3000
+```
+
+## Scripts (run from the repo root, across all workspaces)
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+```
+
+## Documentation
+
+- [Architecture overview](docs/architecture/overview.md)
+- [Payment flow (UPI + cash)](docs/architecture/payment-flow.md)
+- [Database overview](docs/database/overview.md)
+- [API overview](docs/api/overview.md)
+- [Core product rules](docs/product/core-rules.md)
