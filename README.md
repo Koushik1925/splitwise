@@ -5,9 +5,11 @@ tracking, accurate balances, partial settlements, UPI-based payments with
 verified confirmation, cash payments with recipient confirmation, and
 automated overdue reminders.
 
-**Status: foundation phase.** Feature screens and business logic have not
-been built yet — see [`docs/product/core-rules.md`](docs/product/core-rules.md)
-for the rules that will govern them.
+**Status: Phase 2 — identity and social foundation.** Authentication,
+users, friends, and groups are implemented (API + minimal sign-in UI).
+Expenses, balances, settlements, and payments are not built yet — see
+[`docs/product/core-rules.md`](docs/product/core-rules.md) for the rules
+that will govern them.
 
 ## Structure
 
@@ -32,7 +34,7 @@ docs/
 
 ```bash
 npm install
-cp .env.example apps/api/.env
+cp apps/api/.env.example apps/api/.env   # then set JWT_SECRET (32+ chars in production)
 cp apps/web/.env.example apps/web/.env.local
 docker compose up -d          # local MongoDB + Redis
 npm run dev:api                # http://localhost:4000
@@ -48,9 +50,16 @@ npm run test
 npm run build
 ```
 
+API end-to-end tests run against a real MongoDB and Redis:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017/splitwise_e2e REDIS_URL=redis://localhost:6379 JWT_SECRET=local-e2e-secret npm run test:e2e --workspace=apps/api
+```
+
 ## Documentation
 
 - [Architecture overview](docs/architecture/overview.md)
+- [Authentication & authorization](docs/architecture/auth.md)
 - [Payment flow (UPI + cash)](docs/architecture/payment-flow.md)
 - [Database overview](docs/database/overview.md)
 - [API overview](docs/api/overview.md)
