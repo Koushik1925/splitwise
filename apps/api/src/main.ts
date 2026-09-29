@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { configureApp } from './app.setup';
 import type { Env } from './config/env.validation';
 
 async function bootstrap() {
@@ -9,19 +9,7 @@ async function bootstrap() {
   const config = app.get(ConfigService<Env, true>);
 
   app.enableShutdownHooks();
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  app.enableCors({
-    origin: config.get('CORS_ORIGIN', { infer: true }),
-    credentials: true,
-  });
+  configureApp(app);
 
   const port = config.get('PORT', { infer: true });
   await app.listen(port);

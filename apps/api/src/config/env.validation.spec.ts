@@ -27,4 +27,30 @@ describe('validateEnv', () => {
   it('throws when NODE_ENV is not a recognised value', () => {
     expect(() => validateEnv({ ...validConfig, NODE_ENV: 'staging' })).toThrow();
   });
+
+  it('defaults the auth token lifetime to seven days', () => {
+    expect(validateEnv(validConfig).AUTH_TOKEN_TTL_SECONDS).toBe(604800);
+  });
+
+  it('coerces AUTH_TOKEN_TTL_SECONDS and rejects non-positive values', () => {
+    expect(
+      validateEnv({ ...validConfig, AUTH_TOKEN_TTL_SECONDS: '3600' }).AUTH_TOKEN_TTL_SECONDS,
+    ).toBe(3600);
+    expect(() => validateEnv({ ...validConfig, AUTH_TOKEN_TTL_SECONDS: '0' })).toThrow(
+      /AUTH_TOKEN_TTL_SECONDS/,
+    );
+  });
+
+  it('rejects a short JWT_SECRET in production', () => {
+    expect(() => validateEnv({ ...validConfig, NODE_ENV: 'production' })).toThrow(/JWT_SECRET/);
+  });
+
+  it('accepts a 32+ character JWT_SECRET in production', () => {
+    const env = validateEnv({
+      ...validConfig,
+      NODE_ENV: 'production',
+      JWT_SECRET: 'x'.repeat(32),
+    });
+    expect(env.NODE_ENV).toBe('production');
+  });
 });

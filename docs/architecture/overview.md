@@ -58,34 +58,42 @@ Each stage is a distinct, separately persisted concept:
   edited directly; their `remainingAmount` is recalculated from their
   associated payments.
 
-## Backend module map (planned)
+## Backend module map
 
-The NestJS backend is organized around these module boundaries. Only a
-minimal subset (`Config`, `Health`, `Redis`/`Queue` connection wiring) is
-implemented in this foundation phase — the rest are documented here so the
-module boundaries are agreed before implementation begins:
+The NestJS backend is organized around these module boundaries. The
+foundation phase implemented `Config`, `Health`, and the `Redis`/`Queue`
+connection wiring; Phase 2 implemented the identity and social modules
+(Auth, Users, Friends, Groups) plus rate limiting. The rest are documented
+here so the module boundaries are agreed before implementation begins:
 
-| Module        | Responsibility                                              |
-| ------------- | ----------------------------------------------------------- |
-| Auth          | Authentication, session/JWT issuance, authorization guards  |
-| Users         | User profiles and account management                        |
-| Friends       | Friend relationships between users                          |
-| Groups        | Group creation and membership                               |
-| Expenses      | Expense records                                             |
-| Splits        | How an expense divides across participants                  |
-| Balances      | Derived net-balance views                                   |
-| Settlements   | Debt tracking between two users                             |
-| Payments      | Immutable payment records and status transitions            |
-| UPI           | UPI-specific payment initiation and provider callbacks      |
-| Transactions  | Cross-cutting ledger/audit view of money movement           |
-| Notifications | Email/SMS/push/in-app notification dispatch                 |
-| Reminders     | Scheduled overdue-settlement reminders (Redis/BullMQ)       |
-| Preferences   | User-level preferences (notification channels, sound, etc.) |
-| Audit Logs    | Immutable log of financial state transitions                |
+| Module        | Responsibility                                              | Status      |
+| ------------- | ----------------------------------------------------------- | ----------- |
+| Auth          | Authentication, session/JWT issuance, authorization guards  | Implemented |
+| Users         | User profiles and account management                        | Implemented |
+| Friends       | Friend relationships between users                          | Implemented |
+| Groups        | Group creation and membership                               | Implemented |
+| Expenses      | Expense records                                             | Planned     |
+| Splits        | How an expense divides across participants                  | Planned     |
+| Balances      | Derived net-balance views                                   | Planned     |
+| Settlements   | Debt tracking between two users                             | Planned     |
+| Payments      | Immutable payment records and status transitions            | Planned     |
+| UPI           | UPI-specific payment initiation and provider callbacks      | Planned     |
+| Transactions  | Cross-cutting ledger/audit view of money movement           | Planned     |
+| Notifications | Email/SMS/push/in-app notification dispatch                 | Planned     |
+| Reminders     | Scheduled overdue-settlement reminders (Redis/BullMQ)       | Planned     |
+| Preferences   | User-level preferences (notification channels, sound, etc.) | Planned     |
+| Audit Logs    | Immutable log of financial state transitions                | Planned     |
 
-See [`docs/database/overview.md`](../database/overview.md) for the entities
-these modules own and [`docs/api/overview.md`](../api/overview.md) for API
-conventions.
+Within a module, controllers only translate HTTP to service calls; business
+rules live in services and in small pure rule modules
+(`friends/friendship.rules.ts`, `groups/group.permissions.ts`) that are
+unit-tested on their own. Responses are built by presenter functions, never
+by serialising database documents.
+
+See [`docs/architecture/auth.md`](./auth.md) for the authentication flow
+and authorization rules, [`docs/database/overview.md`](../database/overview.md)
+for the entities these modules own, and
+[`docs/api/overview.md`](../api/overview.md) for API conventions and routes.
 
 ## Payment provider abstraction
 
@@ -108,11 +116,13 @@ audio assets or playback implementation have been added yet.
 ## Infrastructure
 
 - **MongoDB** — primary datastore, accessed via Mongoose from `apps/api`.
-- **Redis** — connection used for health checks now, and as the BullMQ
-  backend for scheduled/background jobs (e.g. reminders) in a later phase.
+- **Redis** — health checks, the auth session allowlist
+  (`auth:session:<id>`), and rate-limit counters (`throttle:*`); it will
+  also back BullMQ scheduled/background jobs (e.g. reminders) in a later
+  phase.
 - **BullMQ** — registered at the connection level only; no queues or
   processors exist yet.
 - **Docker Compose** — spins up local MongoDB and Redis for development
   (`docker-compose.yml` at the repo root).
-- **GitHub Actions** — CI runs lint, typecheck, test, and build across all
-  workspaces on every push/PR to `main` (`.github/workflows/ci.yml`).
+- **Testing & deployment** — manual. There is no CI/CD pipeline; checks
+  are run locally and deployment is done by hand.
