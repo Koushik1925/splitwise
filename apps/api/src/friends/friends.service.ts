@@ -9,7 +9,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import type { FilterQuery, Model } from 'mongoose';
 import { isDuplicateKeyError } from '../common/mongo/duplicate-key-error';
-import { toObjectId } from '../common/mongo/object-id';
+import { normalizeObjectId, toObjectId } from '../common/mongo/object-id';
 import { UsersService } from '../users/users.service';
 import {
   decideOnExistingRelationship,
@@ -79,8 +79,8 @@ export class FriendsService {
 
   /**
    * Deletes an accepted friendship so either user may send a new request
-   * later. (Once expenses exist, this will also need to consult the balance
-   * engine before allowing removal.)
+   * later. Removal is allowed even when expenses and a balance exist: the
+   * expense history and the balance derived from it are unaffected.
    */
   async removeFriend(userId: string, friendUserId: string): Promise<void> {
     if (userId === friendUserId) {
@@ -134,6 +134,30 @@ export class FriendsService {
       .exists({ ...toFriendshipPair(firstUserId, secondUserId), status: FriendshipStatus.ACCEPTED })
       .exec();
     return friendship !== null;
+  }
+
+  /**
+   * Of `candidateIds`, the users who have an accepted friendship with
+   * `userId`, in one query. Used to authorize friend-scoped expenses.
+   */
+  async findFriendIds(userId: string, candidateIds: readonly string[]): Promise<Set<string>> {
+    const me = toObjectId(userId);
+    const candidates = [...new Set(candidateIds.map((id) => normalizeObjectId(id)))]
+      .filter((id) => id !== normalizeObjectId(userId))
+      .map((id) => toObjectId(id));
+    if (candidates.length === 0) {
+      return new Set();
+    }
+    const friendships = await this.friendshipModel
+      .find({
+        status: FriendshipStatus.ACCEPTED,
+        $or: [
+          { userA: me, userB: { $in: candidates } },
+          { userB: me, userA: { $in: candidates } },
+        ],
+      })
+      .exec();
+    return new Set(friendships.map((friendship) => otherParticipantId(friendship, userId)));
   }
 
   private async createRequest(

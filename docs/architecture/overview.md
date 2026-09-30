@@ -46,10 +46,11 @@ Each stage is a distinct, separately persisted concept:
 
 - **Expense** — the original amount and description. Immutable once
   payments start applying against the settlements it produced.
-- **ExpenseSplit** — how an expense's amount is divided across group
-  members.
+- **ExpenseSplit** — how an expense's amount is divided across its
+  participants. Embedded in the expense document (Phase 3).
 - **Balance** — a derived, netted view of what one user owes another,
-  aggregated across expenses.
+  aggregated across expenses. Computed on read; not stored (Phase 3). See
+  [`financial-model.md`](./financial-model.md).
 - **Settlement** — a concrete, trackable debt between two specific users
   (`fromUser` owes `toUser`) with `originalAmount`, `totalPaid`, and a
   derived `remainingAmount`.
@@ -72,9 +73,9 @@ here so the module boundaries are agreed before implementation begins:
 | Users         | User profiles and account management                        | Implemented |
 | Friends       | Friend relationships between users                          | Implemented |
 | Groups        | Group creation and membership                               | Implemented |
-| Expenses      | Expense records                                             | Planned     |
-| Splits        | How an expense divides across participants                  | Planned     |
-| Balances      | Derived net-balance views                                   | Planned     |
+| Expenses      | Immutable expense records, with embedded splits             | Implemented |
+| Splits        | Part of Expenses: splits are embedded, not a module         | Implemented |
+| Balances      | Net balances derived on read from expenses                  | Implemented |
 | Settlements   | Debt tracking between two users                             | Planned     |
 | Payments      | Immutable payment records and status transitions            | Planned     |
 | UPI           | UPI-specific payment initiation and provider callbacks      | Planned     |

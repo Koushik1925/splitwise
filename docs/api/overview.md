@@ -1,7 +1,7 @@
 # API Overview
 
-Backend: **NestJS**, TypeScript. Phase 2 implements authentication, users,
-friends, and groups. Authentication and authorization rules are described
+Backend: **NestJS**, TypeScript. Phases 2–3 implement authentication, users,
+friends, groups, expenses, and balances. Authentication and authorization rules are described
 in detail in [`docs/architecture/auth.md`](../architecture/auth.md).
 
 ## Conventions
@@ -30,9 +30,15 @@ in detail in [`docs/architecture/auth.md`](../architecture/auth.md).
 - **Rate limiting**: `POST /auth/register` and `POST /auth/login` allow 10
   requests per minute per client IP (per route); excess requests get `429`
   with `Retry-After`.
-- **Idempotency** (planned): mutating endpoints that trigger financial
-  state changes (payment initiation, provider webhooks) will require/accept
-  an idempotency key so retried requests can't double-apply a payment.
+- **Idempotency**: `POST /expenses` requires an `Idempotency-Key` header
+  (8–128 characters of letters, digits, `_ . : -`). Same creator + key + body
+  returns the original expense (`200`); same key with a different body is
+  `409`. A unique index on `(createdBy, idempotencyKey)` makes this safe under
+  concurrency. Later financial mutations (payment initiation, provider
+  webhooks) will follow the same convention.
+- **Money**: every amount is an integer number of minor units (paise), named
+  `*Minor`. Amounts are never decimals or strings, and balances/owed amounts
+  are computed by the server only — no endpoint accepts them.
 - **Webhook verification** (planned): provider webhook endpoints will verify
   a signature/secret before trusting any payload, and will re-verify status
   with the provider rather than trusting the webhook body alone.
@@ -41,17 +47,17 @@ in detail in [`docs/architecture/auth.md`](../architecture/auth.md).
 
 ### Status codes
 
-| Code  | Meaning in this API                                                           |
-| ----- | ----------------------------------------------------------------------------- |
-| `200` | Success with a body                                                           |
-| `201` | Resource created (register, friend request, group, group member)              |
-| `204` | Success without a body (logout, cancel, remove, leave)                        |
-| `400` | Invalid input (validation, malformed id, self-request, empty update)          |
-| `401` | Not authenticated, or invalid credentials                                     |
-| `403` | Authenticated and can see the resource, but not allowed to perform the action |
-| `404` | Not found — **or** not visible to the caller (e.g. a group they aren't in)    |
-| `409` | Conflicts with current state (duplicate email/request/member, owner leaving)  |
-| `429` | Rate limit exceeded                                                           |
+| Code  | Meaning in this API                                                                                  |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| `200` | Success with a body                                                                                  |
+| `201` | Resource created (register, friend request, group, group member, expense)                            |
+| `204` | Success without a body (logout, cancel, remove, leave)                                               |
+| `400` | Invalid input (validation, malformed id, self-request, empty update)                                 |
+| `401` | Not authenticated, or invalid credentials                                                            |
+| `403` | Authenticated and can see the resource, but not allowed to perform the action                        |
+| `404` | Not found — **or** not visible to the caller (e.g. a group they aren't in)                           |
+| `409` | Conflicts with current state (duplicate email/request/member, owner leaving, reused Idempotency-Key) |
+| `429` | Rate limit exceeded                                                                                  |
 
 ## Endpoints
 
@@ -132,14 +138,74 @@ request, or cancelling someone else's, `403`; a request you are not part of
   `400` (use `/leave`).
 - `PATCH /:groupId` with neither field → `400`.
 
+### Expenses — `/api/v1/expenses`
+
+Contracts are in
+[`packages/shared/src/expenses.ts`](../../packages/shared/src/expenses.ts).
+There are **no** `PATCH`/`PUT`/`DELETE` routes: expenses are immutable.
+
+| Method | Path          | Who                                             | Success                                       |
+| ------ | ------------- | ----------------------------------------------- | --------------------------------------------- |
+| `POST` | `/`           | Caller (becomes `createdBy`)                    | `201 ExpenseDetail`, or `200` on a replay     |
+| `GET`  | `/`           | Caller                                          | `200 { items: ExpenseSummary[], nextCursor }` |
+| `GET`  | `/:expenseId` | Payer, a participant, or an active group member | `200 ExpenseDetail`                           |
+
+`POST /` — header `Idempotency-Key` (required); body:
+
+```json
+{
+  "groupId": "…", // optional; omit for friends outside a group
+  "description": "Dinner", // 1–200 chars, trimmed
+  "amountMinor": 90000, // integer paise, 1 – 10,000,000,000
+  "currency": "INR",
+  "paidBy": "…", // optional; defaults to the caller
+  "splitMethod": "EQUAL", // EQUAL | EXACT | PERCENTAGE | SHARES
+  "participants": [
+    { "userId": "…" } // plus, per method: amountMinor | percentageBps | shares
+  ]
+}
+```
+
+- Each participant carries exactly the field for the method (`EXACT`:
+  `amountMinor` ≥ 1 summing to the total; `PERCENTAGE`: `percentageBps`
+  summing to 10000; `SHARES`: `shares` 1–1000; `EQUAL`: none). Anything else,
+  and any server-owned field (`createdBy`, `splits`, `owedMinor`, balances),
+  is `400`.
+- Participants must be unique; at least one participant other than the payer
+  must owe a share.
+- The creator must be the payer or a debtor (`403`). Friend expense: every
+  participant must be an accepted friend of the payer (`403`). Group expense:
+  the caller must be an active member (`404` otherwise), and the payer and all
+  participants must be active members (`403`). Unusable ids all give the same
+  `403` message.
+- `GET /` accepts `groupId` (caller must be an active member, `404`
+  otherwise), `limit` (1–100, default 20) and `cursor` (the previous
+  `nextCursor`). Newest first.
+- An expense you cannot see is `404`. Former group members still see expenses
+  they are a party to.
+
+### Balances — `/api/v1/balances`
+
+Read-only; derived from expenses on every request. Only obligations the
+caller is a party to are used.
+
+| Method | Path             | Success                                                             |
+| ------ | ---------------- | ------------------------------------------------------------------- |
+| `GET`  | `/`              | `200 BalanceSummary`: netted `balances[]` per counterparty + totals |
+| `GET`  | `/users/:userId` | `200 PairBalanceDetail`: gross, net and per-context breakdown       |
+
+- `GET /` accepts `groupId` to limit to one group's expenses (`404` for
+  non-members). Each balance has a positive `amountMinor` and a `direction`
+  (`THEY_OWE_YOU` | `YOU_OWE_THEM`); pairs that net to zero are omitted.
+- `GET /users/:userId`: `400` for your own id; `404` when there are no
+  expense-derived obligations between you and that user (also for unknown ids).
+- Netting is pairwise only. Debts are never simplified across intermediaries.
+
 ## Planned module → route surface (later phases)
 
 | Module        | Example routes (planned)                                              |
 | ------------- | --------------------------------------------------------------------- |
 | Auth          | `POST /api/v1/auth/refresh` (refresh rotation, not yet needed)        |
-| Expenses      | `GET/POST /api/v1/expenses`                                           |
-| Splits        | (nested under Expenses)                                               |
-| Balances      | `GET /api/v1/balances`                                                |
 | Settlements   | `GET /api/v1/settlements/:id`                                         |
 | Payments      | `POST /api/v1/settlements/:id/payments`                               |
 | UPI           | `POST /api/v1/payments/:id/upi/initiate`, `POST /api/v1/webhooks/upi` |

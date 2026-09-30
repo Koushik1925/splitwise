@@ -2,7 +2,7 @@
 
 Datastore: **MongoDB**, accessed via **Mongoose** from `apps/api`. The
 identity and social collections (`users`, `friendships`, `groups`,
-`group_members`) are implemented as of Phase 2 — see
+`group_members`) are implemented as of Phase 2, and `expenses` as of Phase 3 — see
 [Implemented collections](#implemented-collections-phase-2). Everything
 else in this document is the plan for later phases.
 
@@ -14,9 +14,9 @@ else in this document is the plan for later phases.
 | `Friendship`   | A friend relationship between two users                 | Implemented |
 | `Group`        | A named collection of users who share expenses          | Implemented |
 | `GroupMember`  | Membership + role of a user within a group              | Implemented |
-| `Expense`      | An original shared cost, with amount and description    | Planned     |
-| `ExpenseSplit` | How one expense's amount is divided across participants | Planned     |
-| `Balance`      | Derived, netted balance between two users               | Planned     |
+| `Expense`      | An original shared cost, with amount and description    | Implemented |
+| `ExpenseSplit` | How one expense's amount is divided (embedded in it)    | Implemented |
+| `Balance`      | Derived, netted balance between two users               | Derived     |
 | `Settlement`   | A trackable debt between two users                      | Planned     |
 | `Payment`      | An immutable record of one payment attempt/confirmation | Planned     |
 | `UPIAccount`   | A user's linked UPI handle/account metadata             | Planned     |
@@ -57,11 +57,14 @@ Group 1───< GroupMember >───1 User
 
 Notes:
 
-- `ExpenseSplit` rows always sum back to their parent `Expense.amount` —
-  this is enforced at write time, not derived after the fact.
-- `Balance` is a materialized, netted view (per user pair) kept in sync as
-  expenses/payments change; `Settlement` is the concrete, actionable debt
-  derived from it that payments apply against.
+- An expense's splits always sum back to `Expense.amountMinor` — this is
+  enforced at write time, not derived after the fact. They are embedded in
+  the expense document (see [`expenses`](#expenses-phase-3)), not a separate
+  collection.
+- `Balance` is **not stored** in Phase 3: it is derived on every read from
+  the immutable expenses (and, later, verified payments). `Settlement` is the
+  concrete, actionable debt that payments apply against. See
+  [`docs/architecture/financial-model.md`](../architecture/financial-model.md).
 - `Settlement.remainingAmount` is always `originalAmount - sum(Payment
 where status = SUCCESS)`. It is a derived/cached field, recalculated by
   the backend on every relevant payment transition — never written by a
@@ -194,6 +197,45 @@ multi-document transactions are not available. Phase 2 relies on:
   `{ addressee: caller, status: PENDING }`);
 - a **compensating delete** when creating a group: if inserting the owner
   membership fails, the just-created group is removed.
+
+## `expenses` (Phase 3)
+
+One immutable document per financial event. No field can change after
+insertion, and no update or delete path exists. Money is an integer number
+of minor units (paise); see the
+[financial model](../architecture/financial-model.md).
+
+| Field            | Type                                        | Notes                                                                                                                                  |
+| ---------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `group`          | ObjectId → groups, or null                  | Null for an expense between friends outside any group                                                                                  |
+| `description`    | string (1–200)                              | Trimmed                                                                                                                                |
+| `amountMinor`    | integer (1 – 10,000,000,000)                | Total in paise                                                                                                                         |
+| `currency`       | `INR`                                       | Stored on every expense; balances never mix currencies                                                                                 |
+| `paidBy`         | ObjectId → users                            | Single payer; may or may not appear in `splits`                                                                                        |
+| `createdBy`      | ObjectId → users                            | Always the authenticated caller                                                                                                        |
+| `splitMethod`    | `EQUAL` / `EXACT` / `PERCENTAGE` / `SHARES` |                                                                                                                                        |
+| `splits[]`       | `{ user, owedMinor, input }`                | `owedMinor` is server-computed and authoritative; `input` is the client's exact amount, basis points or share count (null for `EQUAL`) |
+| `idempotencyKey` | string                                      | Client-supplied `Idempotency-Key`                                                                                                      |
+| `requestHash`    | string                                      | SHA-256 of the canonical request; distinguishes a replay from key reuse                                                                |
+
+Embedded splits keep the expense and its shares in a single atomic insert
+(no multi-document transactions are available). A `pre('validate')` hook
+re-checks: unique split users, non-negative integers, `Σ owedMinor =
+amountMinor`, and at least one debtor other than the payer.
+
+Indexes:
+
+| Index                                                   | Why                                                      |
+| ------------------------------------------------------- | -------------------------------------------------------- |
+| `{ paidBy: 1, _id: -1 }`                                | "Expenses I paid"; user queries `$or` this with the next |
+| `{ 'splits.user': 1, _id: -1 }` (multikey)              | "Expenses I'm split on"                                  |
+| `{ group: 1, _id: -1 }`, partial `group` is an ObjectId | A group's expenses, newest first                         |
+| `{ createdBy: 1, idempotencyKey: 1 }` unique            | Final arbiter of duplicate submissions                   |
+
+**Balances** are derived on read by aggregating expenses: unwind `splits`,
+drop the payer's own share and zero shares, and sum per `(debtor, creditor,
+currency, group)` (raw obligations); a pure calculator then nets those
+pairwise for the caller. Nothing about a balance is persisted.
 
 ## Settlement (planned shape)
 
