@@ -59,6 +59,19 @@ export class UsersService {
     return this.userModel.findOne({ _id: toObjectId(userId), status: UserStatus.ACTIVE }).exec();
   }
 
+  /** Of the given ids, those that belong to ACTIVE users (normalized hex ids). */
+  async findActiveIds(userIds: readonly string[]): Promise<Set<string>> {
+    const uniqueIds = [...new Set(userIds.map((id) => normalizeObjectId(id)))];
+    if (uniqueIds.length === 0) {
+      return new Set();
+    }
+    const users = await this.userModel
+      .find({ _id: { $in: uniqueIds.map((id) => toObjectId(id)) }, status: UserStatus.ACTIVE })
+      .select('_id')
+      .exec();
+    return new Set(users.map((user) => user.id as string));
+  }
+
   /**
    * Profile of the authenticated caller. A valid session whose user no longer
    * exists or is no longer active is treated as unauthenticated.

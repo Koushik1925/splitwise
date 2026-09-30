@@ -5,11 +5,13 @@ tracking, accurate balances, partial settlements, UPI-based payments with
 verified confirmation, cash payments with recipient confirmation, and
 automated overdue reminders.
 
-**Status: Phase 2 — identity and social foundation.** Authentication,
-users, friends, and groups are implemented (API + minimal sign-in UI).
-Expenses, balances, settlements, and payments are not built yet — see
-[`docs/product/core-rules.md`](docs/product/core-rules.md) for the rules
-that will govern them.
+**Status: Phase 3 — expenses and balances.** Authentication, users,
+friends, groups, expenses (four split methods) and derived balances are
+implemented (API + minimal web UI). Settlements and payments are not built
+yet — see [`docs/product/core-rules.md`](docs/product/core-rules.md) for the
+rules that will govern them and
+[`docs/architecture/financial-model.md`](docs/architecture/financial-model.md)
+for the expense/balance model.
 
 ## Structure
 

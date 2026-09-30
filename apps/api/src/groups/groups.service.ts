@@ -267,6 +267,40 @@ export class GroupsService {
     }
   }
 
+  /** 404 unless the caller is an active member (same response as an unknown group). */
+  async assertActiveMember(groupId: string, userId: string): Promise<void> {
+    await this.requireActiveMembership(groupId, userId);
+  }
+
+  /** Of `userIds`, those who are currently ACTIVE members of the group. */
+  async getActiveMemberIds(groupId: string, userIds: readonly string[]): Promise<Set<string>> {
+    const ids = [...new Set(userIds.map((id) => normalizeObjectId(id)))];
+    if (ids.length === 0) {
+      return new Set();
+    }
+    const memberships = await this.memberModel
+      .find({
+        group: toObjectId(groupId),
+        user: { $in: ids.map((id) => toObjectId(id)) },
+        status: GroupMemberStatus.ACTIVE,
+      })
+      .exec();
+    return new Set(memberships.map((membership) => membership.user.toHexString()));
+  }
+
+  /** Group names by id, for labelling expenses and balances. Membership is not checked here. */
+  async findGroupNames(groupIds: readonly string[]): Promise<Map<string, string>> {
+    const ids = [...new Set(groupIds.map((id) => normalizeObjectId(id)))];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const groups = await this.groupModel
+      .find({ _id: { $in: ids.map((id) => toObjectId(id)) } })
+      .select('name')
+      .exec();
+    return new Map(groups.map((group) => [group.id as string, group.name]));
+  }
+
   /** Adds a first-time member, or reactivates someone who previously left or was removed. */
   private async activateMembership(
     groupId: string,

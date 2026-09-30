@@ -38,6 +38,22 @@ Payment 3 = ₹200 → Remaining = ₹0
 The original expense (₹500) never changes — only the settlement's
 `remainingAmount`, derived from its payment history, moves.
 
+## Expense rules (Phase 3)
+
+- Expenses are **immutable**: they cannot be edited or deleted. Settlements
+  and payments will be recorded separately and never rewrite an expense.
+- The creator is always the authenticated caller, and must be the payer or
+  one of the debtors. Debtor consent is not required.
+- Any active group member can record a group expense; the payer and every
+  participant must be active members at that moment. Friend expenses require
+  each participant to be an accepted friend of the payer.
+- Leaving or being removed from a group, or removing a friend, is allowed
+  even when a balance exists. The historical expenses and balance remain.
+- There is a single payer per expense, and INR is the only currency.
+- Balances are netted **pairwise only**; debts are never simplified across
+  intermediaries. See
+  [`docs/architecture/financial-model.md`](../architecture/financial-model.md).
+
 ## UPI payment flow (business rules)
 
 1. User owes ₹300 and clicks **Pay**.

@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from './auth/auth.module';
+import { BalancesModule } from './balances/balances.module';
 import { validateEnv, type Env } from './config/env.validation';
+import { ExpensesModule } from './expenses/expenses.module';
 import { FriendsModule } from './friends/friends.module';
 import { GroupsModule } from './groups/groups.module';
 import { HealthModule } from './health/health.module';
@@ -31,6 +33,8 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     FriendsModule,
     GroupsModule,
+    ExpensesModule,
+    BalancesModule,
   ],
 })
 export class AppModule {}
